@@ -172,7 +172,7 @@ class RegisterTransform extends Transform {
             root += File.separator
 
 
-        if (directoryInput.changedFiles.isEmpty()) {
+        if (directoryInput.changedFiles.isEmpty() || cacheMap == null) {
             //遍历目录下的每个文件
             directoryInput.file.eachFileRecurse { File file ->
 
@@ -225,7 +225,7 @@ class RegisterTransform extends Transform {
 
         long scanTime = System.currentTimeMillis()
 
-        println "auto-register cost time: ${System.currentTimeMillis() - dirTime}, scan time: ${scanTime - dirTime}. path="+ dest.absolutePath
+        println "auto-register cost time: ${System.currentTimeMillis() - dirTime}, scan time: ${scanTime - dirTime}. path=" + dest.absolutePath
         // 处理完后拷到目标文件
         FileUtils.copyDirectory(directoryInput.file, dest)
 
