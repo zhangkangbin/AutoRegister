@@ -31,7 +31,7 @@ class CodeScanProcessor {
      */
     boolean scanJar(File jarFile, File destFile) {
         //检查是否存在缓存，有就添加class list 和 设置fileContainsInitClass
-        if (!jarFile || hitCache(jarFile, destFile))
+        if (!jarFile || hitCache(jarFile.absolutePath, destFile))
             return false
 
         def srcFilePath = jarFile.absolutePath
@@ -216,19 +216,22 @@ class CodeScanProcessor {
      * @param srcFilePath
      */
     private void addToCacheMap(String interfaceName, String name, String srcFilePath) {
-        if (!srcFilePath.endsWith(".jar") || cacheMap == null) return
-        def jarHarvest = cacheMap.get(srcFilePath)
-        if (!jarHarvest) {
-            jarHarvest = new ScanJarHarvest()
-            cacheMap.put(srcFilePath, jarHarvest)
+        if(cacheMap == null) return
+        if (srcFilePath.endsWith(".jar") ||srcFilePath.endsWith(".class")) {
+            def jarHarvest = cacheMap.get(srcFilePath)
+            if (!jarHarvest) {
+                jarHarvest = new ScanJarHarvest()
+                cacheMap.put(srcFilePath, jarHarvest)
+            }
+            if (name) {
+                ScanJarHarvest.Harvest classInfo = new ScanJarHarvest.Harvest()
+                classInfo.setIsInitClass(interfaceName == null)
+                classInfo.setInterfaceName(interfaceName)
+                classInfo.setClassName(name)
+                jarHarvest.harvestList.add(classInfo)
+            }
         }
-        if (name) {
-            ScanJarHarvest.Harvest classInfo = new ScanJarHarvest.Harvest()
-            classInfo.setIsInitClass(interfaceName == null)
-            classInfo.setInterfaceName(interfaceName)
-            classInfo.setClassName(name)
-            jarHarvest.harvestList.add(classInfo)
-        }
+
     }
 
     boolean isCachedJarContainsInitClass(String filePath) {
@@ -241,8 +244,7 @@ class CodeScanProcessor {
      * @param destFile
      * @return 是否存在缓存
      */
-    boolean hitCache(File jarFile, File destFile) {
-        def jarFilePath = jarFile.absolutePath
+    boolean hitCache(String jarFilePath, File destFile) {
         if (cacheMap != null) {
             ScanJarHarvest scanJarHarvest = cacheMap.get(jarFilePath)
             if (scanJarHarvest) {

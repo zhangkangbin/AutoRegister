@@ -17,6 +17,7 @@ class RegisterTransform extends Transform {
 
     Project project
     AutoRegisterConfig config;
+    Map<String, ScanJarHarvest> cacheMap = null
 
     RegisterTransform(Project project) {
         this.project = project
@@ -62,14 +63,10 @@ class RegisterTransform extends Transform {
         }
 
         long time = System.currentTimeMillis()
-        boolean leftSlash = File.separator == '/'
-
 
         def cacheEnabled = config.cacheEnabled
         println("auto-register-----------isIncremental:${isIncremental}--------config.cacheEnabled:${cacheEnabled}--------------------\n")
 
-        File jarManagerfile = null
-        Map<String, ScanJarHarvest> cacheMap = null
         File cacheFile = null
         Gson gson = null
 
@@ -95,30 +92,13 @@ class RegisterTransform extends Transform {
             }
             // 遍历目录
             input.directoryInputs.each { DirectoryInput directoryInput ->
-                long dirTime = System.currentTimeMillis();
-                // 获得产物的目录
-                File dest = outputProvider.getContentLocation(directoryInput.name, directoryInput.contentTypes, directoryInput.scopes, Format.DIRECTORY)
-                String root = directoryInput.file.absolutePath
-                if (!root.endsWith(File.separator))
-                    root += File.separator
-                //遍历目录下的每个文件
-                directoryInput.file.eachFileRecurse { File file ->
-                    def path = file.absolutePath.replace(root, '')
-                    if (file.isFile()) {
-                        def entryName = path
-                        if (!leftSlash) {
-                            entryName = entryName.replaceAll("\\\\", "/")
-                        }
-                        scanProcessor.checkInitClass(entryName, new File(dest.absolutePath + File.separator + path))
-                        if (scanProcessor.shouldProcessClass(entryName)) {
-                            scanProcessor.scanClass(file)
-                        }
-                    }
-                }
+
+                long dirTime = System.currentTimeMillis()
+
+                scanClass(outputProvider, directoryInput, scanProcessor)
                 long scanTime = System.currentTimeMillis();
                 // 处理完后拷到目标文件
-                FileUtils.copyDirectory(directoryInput.file, dest)
-                println "auto-register cost time: ${System.currentTimeMillis() - dirTime}, scan time: ${scanTime - dirTime}. path=${root}"
+                println "auto-register cost time: ${System.currentTimeMillis() - dirTime}, scan time: ${scanTime - dirTime}. path="
             }
         }
 
@@ -180,6 +160,75 @@ class RegisterTransform extends Transform {
         // 获得输出文件
         File dest = outputProvider.getContentLocation(destName + "_" + hexName, jarInput.contentTypes, jarInput.scopes, Format.JAR)
         return dest
+    }
+
+    void scanClass(TransformOutputProvider outputProvider, DirectoryInput directoryInput, CodeScanProcessor scanProcessor) {
+        long dirTime = System.currentTimeMillis()
+        boolean leftSlash = File.separator == '/'
+        // 获得产物的目录
+        File dest = outputProvider.getContentLocation(directoryInput.name, directoryInput.contentTypes, directoryInput.scopes, Format.DIRECTORY)
+        String root = directoryInput.file.absolutePath
+        if (!root.endsWith(File.separator))
+            root += File.separator
+
+
+        if (directoryInput.changedFiles.isEmpty()) {
+            //遍历目录下的每个文件
+            directoryInput.file.eachFileRecurse { File file ->
+
+                def path = file.absolutePath.replace(root, '')
+                if (file.isFile()) {
+                    def entryName = path
+                    if (!leftSlash) {
+                        entryName = entryName.replaceAll("\\\\", "/")
+                    }
+                    scanProcessor.checkInitClass(entryName, new File(dest.absolutePath + File.separator + path))
+                    if (scanProcessor.shouldProcessClass(entryName)) {
+                        scanProcessor.scanClass(file)
+                    }
+                }
+
+
+            }
+
+        } else {
+            directoryInput.changedFiles.each { fileList ->
+                cacheMap.remove(fileList.key.absolutePath)
+            }
+            cacheMap.each { cache ->
+                if (cache.key.endsWith(".class")) {
+                    scanProcessor.hitCache(cache.key, dest)
+                }
+            }
+            directoryInput.changedFiles.each { fileList ->
+                def file = fileList.key
+                if (fileList.value == Status.CHANGED || fileList.value == Status.ADDED) {
+
+                    def path = file.absolutePath.replace(root, '')
+                    if (!file.isFile()) return
+
+                    def entryName = path
+                    if (!leftSlash) {
+                        entryName = entryName.replaceAll("\\\\", "/")
+                    }
+                    scanProcessor.checkInitClass(entryName, new File(dest.absolutePath + File.separator + path))
+                    if (scanProcessor.shouldProcessClass(entryName)) {
+                        scanProcessor.scanClass(file)
+                    }
+
+                }
+                println "absolutePath of change file: " + fileList.key.absolutePath + " Status:" + fileList.value
+            }
+
+
+        }
+
+        long scanTime = System.currentTimeMillis()
+
+        println "auto-register cost time: ${System.currentTimeMillis() - dirTime}, scan time: ${scanTime - dirTime}. path="+ dest.absolutePath
+        // 处理完后拷到目标文件
+        FileUtils.copyDirectory(directoryInput.file, dest)
+
     }
 
 }
